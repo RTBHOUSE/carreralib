@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, unicode_literals
 
 from serial import serial_for_url
 
-from .connection import BufferTooShort, Connection, TimeoutError
+from . import BufferTooShort, Connection, TimeoutError
 
 
 class SerialConnection(Connection):

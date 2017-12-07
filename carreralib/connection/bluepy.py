@@ -5,7 +5,7 @@ import logging
 
 from bluepy import btle
 
-from .connection import BufferTooShort, Connection, TimeoutError
+from . import BufferTooShort, Connection, TimeoutError
 
 SERVICE_UUID = '39df7777-b1b4-b90b-57f1-7144ae4e4a6a'
 OUTPUT_UUID = '39df8888-b1b4-b90b-57f1-7144ae4e4a6a'
