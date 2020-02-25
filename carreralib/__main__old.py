@@ -7,11 +7,8 @@ import errno
 import logging
 import select
 import time
-from lib2to3.pgen2 import driver
 
 from . import ControlUnit
-from curses.textpad import Textbox, rectangle
-
 
 def posgetter(driver):
     return (-driver.laps, driver.time)
@@ -33,13 +30,16 @@ def formattime(time, longfmt=False):
 
 class RMS(object):
 
-    MAX_LAPS = 3
+    HEADER = 'Pos No         Time  Lap time  Best lap Laps Pit Fuel'
+    FORMAT1 = ('{pos:<4}#{car:<2}{time:>12}{laptime:>10}{bestlap:>10}' +
+               '{laps:>5}{pits:>4}{fuel:>5.0%}')
+    FORMAT2 = ('{pos:<4}#{car:<2}{time:>12}{laptime:>10}{bestlap:>10}' +
+               '{laps:>5} n/a  n/a')
+    FOOTER1 = ' * * * * *  SPACE to start/pause, ESC for pace car'
+    FOOTER2 = ' [R]eset, [S]peed, [B]rake, [F]uel, [C]ode, [Q]uit'
 
-    HEADER = 'Pos No         Time  Lap time  Best lap Laps Finished'
-    FORMAT = ('{pos:<4}#{car:<2}{time:>12}{laptime:>10}{bestlap:>10} {laps:>5} {finished}')
-
-    FOOTER = ' * * * * *  SPACE to start/restart, ESC quit'
-
+    # CU reports zero fuel for all cars unless pit lane adapter is connected
+    # FUEL_MASK = ControlUnit.Status.FUEL_MODE | ControlUnit.Status.REAL_MODE
     FUEL_MASK = ControlUnit.Status.PIT_LANE_MODE
 
     class Driver(object):
@@ -49,7 +49,9 @@ class RMS(object):
             self.laptime = None
             self.bestlap = None
             self.laps = 0
-            self.finished = False
+            self.pits = 0
+            self.fuel = 0
+            self.pit = False
 
         def newlap(self, timer):
             if self.time is not None:
@@ -68,6 +70,7 @@ class RMS(object):
 
     def reset(self):
         self.drivers = [self.Driver(num) for num in range(1, 9)]
+        self.maxlaps = 0
         self.start = None
         # discard remaining timer messages
         status = self.cu.request()
@@ -76,6 +79,8 @@ class RMS(object):
         self.status = status
         # reset cu timer
         self.cu.reset()
+        # reset position tower
+        self.cu.clrpos()
 
     def run(self):
         self.window.nodelay(1)
@@ -84,28 +89,22 @@ class RMS(object):
             try:
                 self.update()
                 c = self.window.getch()
-                if c == 27: # ESC
+                if c == ord('q'):
                     break
-                elif c == ord(' '):
+                elif c == ord('r'):
                     self.reset()
+                elif c == ord(' '):
                     self.cu.start()
-                elif c == ord('n'):
-                    self.window.addstr(1, 0, "Enter the name of the 1st driver")
-
-                    # curses.newwin(height, width, begin_y, begin_x)
-                    editwin = curses.newwin(5, 30, 3, 1)
-                    # rectangle(win, uly, ulx, lry, lrx)
-                    # rectangle(self.window, 2, 0, 4, 1 + 30 + 1)
-                    rectangle(self.window, 2, 0, 8, 32)
-                    self.window.refresh()
-
-                    box = Textbox(editwin)
-
-                    # Let the user edit until Ctrl-G is struck.
-                    box.edit()
-
-                    # Get resulting contents
-                    message = box.gather()
+                elif (c == 27):  # ESC
+                    self.cu.request(ControlUnit.PACE_CAR_KEY)
+                elif c == ord('s'):
+                    self.cu.request(ControlUnit.SPEED_KEY)
+                elif c == ord('b'):
+                    self.cu.request(ControlUnit.BRAKE_KEY)
+                elif c == ord('f'):
+                    self.cu.request(ControlUnit.FUEL_KEY)
+                elif c == ord('c'):
+                    self.cu.request(ControlUnit.CODE_KEY)
                 data = self.cu.request()
                 # prevent counting duplicate laps
                 if data == last:
@@ -124,35 +123,41 @@ class RMS(object):
                     raise
 
     def handle_status(self, status):
+        for driver, fuel in zip(self.drivers, status.fuel):
+            driver.fuel = fuel
+        for driver, pit in zip(self.drivers, status.pit):
+            if pit and not driver.pit:
+                driver.pits += 1
+            driver.pit = pit
         self.status = status
 
     def handle_timer(self, timer):
         driver = self.drivers[timer.address]
-        if driver.finished:
-            return
         driver.newlap(timer)
+        if self.maxlaps < driver.laps:
+            self.maxlaps = driver.laps
+            # position tower only handles 250 laps
+            self.cu.setlap(self.maxlaps % 250)
         if self.start is None:
             self.start = timer.timestamp
-        if driver.laps == self.MAX_LAPS:
-            driver.finished = True
-            logging.info("DRIVER: " + str(driver.num) + " " + str(driver.laptime))
 
     def update(self, blink=lambda: (time.time() * 2) % 2 == 0):
         window = self.window
         window.clear()
         nlines, ncols = window.getmaxyx()
         window.addnstr(0, 0, self.HEADER.ljust(ncols), ncols, self.titleattr)
-        window.addnstr(nlines - 1, 0, self.FOOTER, ncols - 1)
+        window.addnstr(nlines - 2, 0, self.FOOTER1, ncols - 1)
+        window.addnstr(nlines - 1, 0, self.FOOTER2, ncols - 1)
 
         start = self.status.start
         if start == 0 or start == 7:
             pass
         elif start == 1:
-            window.chgat(nlines - 1, 0, 2 * 5, self.lightattr)
+            window.chgat(nlines - 2, 0, 2 * 5, self.lightattr)
         elif start < 7:
-            window.chgat(nlines - 1, 0, 2 * (start - 1), self.lightattr)
+            window.chgat(nlines - 2, 0, 2 * (start - 1), self.lightattr)
         elif int(time.time() * 2) % 2 == 0:  # A_BLINK may not be supported
-            window.chgat(nlines - 1, 0, 2 * 5, self.lightattr)
+            window.chgat(nlines - 2, 0, 2 * 5, self.lightattr)
 
         drivers = [driver for driver in self.drivers if driver.time]
         for pos, driver in enumerate(sorted(drivers, key=posgetter), start=1):
@@ -164,12 +169,20 @@ class RMS(object):
             else:
                 gap = leader.laps - driver.laps
                 t = '+%d Lap%s' % (gap, 's' if gap != 1 else '')
-            text = self.FORMAT.format(
-                pos=pos, car=driver.num, time=t, laps=driver.laps,
-                laptime=formattime(driver.laptime),
-                bestlap=formattime(driver.bestlap),
-                finished='FINISHED' if driver.finished else ''
-            )
+            if (self.status.mode & self.FUEL_MASK) != 0:
+                text = self.FORMAT1.format(
+                    pos=pos, car=driver.num, time=t, laps=driver.laps,
+                    laptime=formattime(driver.laptime),
+                    bestlap=formattime(driver.bestlap),
+                    fuel=driver.fuel/15.0,
+                    pits=driver.pits
+                )
+            else:
+                text = self.FORMAT2.format(
+                    pos=pos, car=driver.num, time=t, laps=driver.laps,
+                    laptime=formattime(driver.laptime),
+                    bestlap=formattime(driver.bestlap)
+                )
             window.addnstr(pos, 0, text, ncols)
         window.refresh()
 
@@ -181,9 +194,9 @@ parser.add_argument('-t', '--timeout', default=1.0, type=float)
 parser.add_argument('-v', '--verbose', action='store_true')
 args = parser.parse_args()
 
-logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARN,
                     filename=args.logfile,
-                    fmt='%(message)s')
+                    fmt='%(asctime)s: %(message)s')
 
 with contextlib.closing(ControlUnit(args.device, timeout=args.timeout)) as cu:
     print('CU version %s' % cu.version())
