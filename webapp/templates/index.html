@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="refresh" content="5"/>
+    <link rel="stylesheet" type="text/css" href="/static/styles.css" />
+    <link rel="stylesheet" type="text/css" href="/static/styles1.css" />
+    <!--link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/font-proxima-nova@1.0.1/style.css" /-->
+    <title>TOP 10 BEST DRIVERS</title>
+</head>
+
+<body>
+    <div id="container">
+        <div id="upper">
+            <span>Top10</span> Best Drivers
+        </div>
+        <div id="content">
+            <table>
+                <thead>
+                    <tr>
+                        <td>#</td>
+                        <td>Name</td>
+                        <td>Time</td>
+                    </tr>
+                </thead>
+                <tbody>
+                 {% for result in results %}
+                 <tr><td>{{ loop.index }}</td><td>{{ result.username }}</td><td> {{ result.best_lap / 1000 }}s</td></tr>
+                 {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="footer">
+            <img src="/static/RTB_logo_white.png" style="max-height: 5vh;" />
+            <img src="/static/bigdata_elephants.svg" style="max-height: 10vh;" />
+        </div>
+    </div>
+</body>
+
+</html>

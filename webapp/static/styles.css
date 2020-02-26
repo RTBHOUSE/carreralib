@@ -1,0 +1,80 @@
+html,
+body {
+    margin: 0;
+    padding: 0;
+
+    font-size: 24pt;
+}
+body {
+    font-family: "Proxima Nova", sans-serif;
+
+    background: #30002b;
+    background-image: url('background_1920x1080.jpg');
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+
+    color: white;
+}
+h1 {
+    text-transform: uppercase;
+    margin: 0;
+}
+#container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+
+}
+#container > * {
+    padding: 0.25rem 1rem;
+}
+#container #upper {
+    font-size: 2rem;
+    text-transform: uppercase;
+}
+#container #upper span {
+    color: #ed4136;
+    font-weight: bold;
+}
+
+#container #content {
+    flex: auto;
+}
+#container #content table {
+    width: 100%;
+    border-collapse: collapse;
+}
+#container #content table td {
+    padding: 0.5rem 0.5rem;
+}
+#container #content table td:first-child {
+    width: 1px;
+    white-space: nowrap;
+}
+#container #content table td:last-child {
+    width: 1px;
+    white-space: nowrap;
+}
+#container #content table thead {
+    background-color: #c82127;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+#container #content table tbody {
+    font-weight: bold;
+}
+#container #content table tbody tr:nth-child(2n) {
+    background-color: #412742;
+}
+#container #content table tbody tr:nth-child(2n+1) {
+    background-color: #240f24;
+}
+
+#container #footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+
+    max-height: 10%;
+}
