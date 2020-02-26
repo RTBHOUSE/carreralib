@@ -6,12 +6,15 @@ import logging
 import time
 from typing import List
 
+from google.cloud import datastore
+from google.oauth2 import service_account
+
 from . import ControlUnit
 
 LOG_FILE_NAME = 'carreralib.log'
 DEVICE = 'F8:69:3D:77:50:EA'
 RESULTS_CSV_FILE = 'results.csv'
-MAX_LAPS = 2
+MAX_LAPS = 5
 
 
 def formattime(time, longfmt=False):
@@ -34,9 +37,16 @@ class Driver(object):
         self.time = None
         self.laptime = None
         self.bestlap = None
-        self.finished_laps = 0
         self.laps = []
-        self.finished = False
+        self.finished_at = None
+
+    @property
+    def finished_laps(self):
+        return len(self.laps)
+
+    @property
+    def finished(self):
+        return self.finished_at is not None
 
     def newlap(self, timer):
         if self.time is not None:
@@ -44,14 +54,12 @@ class Driver(object):
             self.laps.append(self.laptime)
             if self.bestlap is None or self.laptime < self.bestlap:
                 self.bestlap = self.laptime
-            self.finished_laps += 1
         self.time = timer.timestamp
 
     def __str__(self):
         return f'{self.name} | {self.finished_laps} | {formattime(self.time)} ' \
                f'| {formattime(self.laptime)} | {formattime(self.bestlap)} ' \
-               f'| {self.finished}'
-
+               f'| {self.finished_at}'
 
 
 class RaceRunner:
@@ -109,7 +117,7 @@ class RaceRunner:
             self.max_lap = driver.finished_laps
             self.control_unit.setlap(self.max_lap % 250)
         if driver.finished_laps == MAX_LAPS:
-            driver.finished = True
+            driver.finished_at = datetime.utcnow()
             logging.info("DRIVER: " + driver.name + " " + str(driver.laptime))
 
         self.show_table()
@@ -119,6 +127,19 @@ class RaceRunner:
         for driver in self.drivers:
             print(driver)
         print('-' * 20)
+
+
+def save_to_datastore(driver):
+    credentials = service_account.Credentials \
+        .from_service_account_file('./bigdatatech-warsaw-challenge-219525419ec7.json')
+    client = datastore.Client(project=credentials.project_id, credentials=credentials)
+
+    entity = datastore.Entity(client.key('race_results'))
+    entity['username'] = driver.name
+    entity['best_lap'] = driver.bestlap
+    entity['finished_at'] = finished_at
+    entity['laps'] = driver.laps
+    client.put(entity)
 
 
 logging.basicConfig(level=logging.DEBUG,
@@ -136,8 +157,12 @@ with contextlib.closing(ControlUnit(DEVICE, timeout=1)) as control_unit:
         runner = RaceRunner(control_unit, [driver])
         runner.run()
 
+        finished_at = datetime.now()
+
         with open(RESULTS_CSV_FILE, 'a+') as file:
-            file.write(f'{driver.name}, {driver.bestlap}, {datetime.now()}\n')
+            file.write(f'{driver.name}, {driver.bestlap}, {finished_at}\n')
+
+        save_to_datastore(driver)
 
     finally:
         control_unit.reset()
