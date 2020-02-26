@@ -66,7 +66,7 @@ class Driver(object):
     def save_best_lap(self):
         if self.name and self.best_lap_time:
             with open(RESULTS_CSV_FILE, 'a+') as file:
-                file.write(f'{self.name}, {self.best_lap_time, datetime.utcnow()}\n')
+                file.write(f'{self.name}, {self.best_lap_time}, {datetime.utcnow()}\n')
             try:
                 save_to_datastore(self)
             except BaseException as e:
