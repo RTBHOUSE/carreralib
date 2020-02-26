@@ -1,0 +1,7 @@
+[Desktop Entry]
+Exec=bash -c 'cd /home/rtb_host/carreralib && ./start.sh'
+Icon=/home/rtb_host/carreralib/start.svg
+Name=Race
+Terminal=false
+Type=Application
+

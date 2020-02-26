@@ -1,0 +1,7 @@
+[Desktop Entry]
+Exec=bash -c 'cd /home/rtb_host/carreralib && ./start_rank.sh'
+Icon=/home/rtb_host/carreralib/start.svg
+Name=Race Ranks
+Terminal=false
+Type=Application
+
