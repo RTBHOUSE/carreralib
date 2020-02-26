@@ -22,6 +22,10 @@ RESULTS_CSV_FILE = 'results.csv'
 MAX_LAPS = 5
 
 
+credentials = service_account.Credentials.from_service_account_file(DATASTORE_CERT_PATH)
+client = datastore.Client(project=credentials.project_id, credentials=credentials)
+
+
 def formattime(time, longfmt=False):
     if time is None:
         return 'n/a'
@@ -37,8 +41,9 @@ def formattime(time, longfmt=False):
 
 
 class Driver(object):
-    def __init__(self, name):
+    def __init__(self, name, email):
         self.name = name
+        self.email = email
         self.time = None
         self.last_lap_time = None
         self.best_lap_time = None
@@ -51,8 +56,16 @@ class Driver(object):
         self.laps = []
 
     @property
+    def is_registered(self):
+        return self.name is not None
+
+    @property
     def finished_laps(self):
         return len(self.laps)
+
+    @property
+    def finished(self):
+        return self.finished_laps == MAX_LAPS
 
     def newlap(self, timer):
         if self.time is not None:
@@ -60,13 +73,15 @@ class Driver(object):
             self.laps.append(self.last_lap_time)
             if self.best_lap_time is None or self.last_lap_time < self.best_lap_time:
                 self.best_lap_time = self.last_lap_time
-                self.save_best_lap()
         self.time = timer.timestamp
 
-    def save_best_lap(self):
-        if self.name and self.best_lap_time:
+        if self.finished:
+            self.save_results()
+
+    def save_results(self):
+        if self.name and self.time:
             with open(RESULTS_CSV_FILE, 'a+') as file:
-                file.write(f'{self.name}, {self.best_lap_time}, {datetime.utcnow()}\n')
+                file.write(f'{self.name}, {self.time}, {datetime.utcnow()}\n')
             try:
                 save_to_datastore(self)
             except BaseException as e:
@@ -78,12 +93,12 @@ class Driver(object):
 
 
 def posgetter(driver: Driver):
-    return (driver.best_lap_time or 10000000, -driver.finished_laps)
+    return (-driver.finished_laps, driver.best_lap_time or 10000000)
 
 
 class RaceRunner:
     HEADER = 'Pos Name       Lap time  Best lap Laps Finished'
-    FORMAT = '{pos:<4}{car:<8}{laptime:>10}{bestlap:>10} {laps:>5}'
+    FORMAT = '{pos:<4}{car:<8}{time:>12}{laptime:>10}{bestlap:>10} {laps:>5}'
 
     FOOTER = ' * * * * *  SPACE to start/restart, ESC quit'
 
@@ -162,6 +177,9 @@ class RaceRunner:
         driver.newlap(timer)
         self.max_lap = max(self.max_lap, driver.finished_laps)
 
+        if all([driver.finished for driver in self.drivers if driver.is_registered]):
+            self.control_unit.start()
+
     def update(self, blink=lambda: (time.time() * 2) % 2 == 0):
         window = self.window
         window.clear()
@@ -179,9 +197,18 @@ class RaceRunner:
         elif int(time.time() * 2) % 2 == 0:  # A_BLINK may not be supported
             window.chgat(nlines - 1, 0, 2 * 5, self.lightattr)
 
-        for pos, driver in enumerate(sorted(self.drivers, key=posgetter, reverse=True), start=1):
+        for pos, driver in enumerate(sorted(self.drivers, key=posgetter), start=1):
+            driver_time = None
+            if pos == 1:
+                leader = driver
+                if driver.time and self.start:
+                    driver_time = formattime(driver.time - self.start, True)
+            elif driver.finished_laps == leader.finished_laps:
+                if driver.time and leader.time:
+                    driver_time = '+%ss' % formattime(driver.time - leader.time)
+
             text = self.FORMAT.format(
-                pos=pos, car=driver.name, time=driver.best_lap_time or '-', laps=driver.finished_laps,
+                pos=pos, car=driver.name, time=driver_time or '-', laps=driver.finished_laps,
                 laptime=formattime(driver.last_lap_time),
                 bestlap=formattime(driver.best_lap_time),
             )
@@ -190,11 +217,11 @@ class RaceRunner:
 
 
 def save_to_datastore(driver: Driver):
-    credentials = service_account.Credentials.from_service_account_file(DATASTORE_CERT_PATH)
-    client = datastore.Client(project=credentials.project_id, credentials=credentials)
-
     entity = datastore.Entity(client.key(DATASTORE_ENTITY_NAME))
     entity['username'] = driver.name
+    entity['email'] = driver.email
+    entity['time'] = driver.time
+    entity['laps'] = driver.laps
     entity['best_lap'] = driver.best_lap_time
     entity['finished_at'] = datetime.utcnow()
     client.put(entity)
@@ -204,16 +231,18 @@ logging.basicConfig(level=logging.INFO,
                     filename=LOG_FILE_NAME,
                     format='%(message)s')
 
-driver_name_1 = input('Name (yellow pad): ')
-driver_name_2 = input('Name (blue pad): ')
-
 
 with contextlib.closing(ControlUnit(DEVICE, timeout=1)) as control_unit:
     control_unit.version()
 
+    driver_name_1 = input('Name (yellow pad): ')
+    driver_email_1 = input('Email (yellow pad): ')
+    driver_name_2 = input('Name (blue pad): ')
+    driver_email_2 = input('Email (blue pad): ')
+
     drivers = [
-        Driver(driver_name_1),
-        Driver(driver_name_2)
+        Driver(driver_name_1, driver_email_1),
+        Driver(driver_name_2, driver_email_2)
     ]
 
     def run(window):
