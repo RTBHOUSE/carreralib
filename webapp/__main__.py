@@ -53,6 +53,22 @@ def deduplicate_results(results):
     return deduplicated_results
 
 
+
+@app.route("/csv")
+def csv_store():
+    results = list()
+    with open('results.csv', newline='') as csvfile:
+        reader = csv.reader(csvfile, delimiter=',')
+
+        for row in reader:
+            results.append({
+                'username' : row[0],
+                'best_lap' : row[1]
+            })
+
+    results.sort(key=lambda result: int(result['best_lap']),reverse=False)
+    return render_template('rank.html', results=results[:10])
+
 if __name__ == "__main__":
     app.run()
 
