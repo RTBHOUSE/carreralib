@@ -17,7 +17,7 @@ app = Flask(__name__,
 @app.route("/")
 def data_store():
     query = client.query(kind="race_results")
-    query.order = ['best_lap']
+    query.order = ['time']
 
     results = query.fetch(limit=200)
     results = deduplicate_results(results)
@@ -33,10 +33,10 @@ def csv_store():
         for row in reader:
             results.append({
                 'username' : row[0],
-                'best_lap' : int(row[1])
+                'time' : int(row[1])
             })
 
-    results.sort(key=lambda result: result['best_lap'],reverse=False)
+    results.sort(key=lambda result: result['time'],reverse=False)
     results = deduplicate_results(results)
     return render_template('index.html', results=results[:10])
 
