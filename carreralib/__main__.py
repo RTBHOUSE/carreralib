@@ -41,9 +41,8 @@ def formattime(time, longfmt=False):
 
 
 class Driver(object):
-    def __init__(self, name, email):
+    def __init__(self, name):
         self.name = name
-        self.email = email
         self.time = None
         self.last_lap_time = None
         self.best_lap_time = None
@@ -57,7 +56,7 @@ class Driver(object):
 
     @property
     def is_registered(self):
-        return self.name is not None
+        return bool(self.name)
 
     @property
     def finished_laps(self):
@@ -65,9 +64,12 @@ class Driver(object):
 
     @property
     def finished(self):
-        return self.finished_laps == MAX_LAPS
+        return self.finished_laps >= MAX_LAPS
 
     def newlap(self, timer):
+        if self.finished:
+            return
+
         if self.time is not None:
             self.last_lap_time = timer.timestamp - self.time
             self.laps.append(self.last_lap_time)
@@ -80,8 +82,9 @@ class Driver(object):
 
     def save_results(self):
         if self.name and self.time:
+            laps_sum = sum(self.laps)
             with open(RESULTS_CSV_FILE, 'a+') as file:
-                file.write(f'{self.name}, {self.time}, {datetime.utcnow()}\n')
+                file.write(f'{self.name}, {laps_sum}, {datetime.utcnow()}\n')
             try:
                 save_to_datastore(self)
             except BaseException as e:
@@ -97,7 +100,7 @@ def posgetter(driver: Driver):
 
 
 class RaceRunner:
-    HEADER = 'Pos Name       Lap time  Best lap Laps Finished'
+    HEADER = 'Pos Name                   Lap time  Best lap Laps'
     FORMAT = '{pos:<4}{car:<8}{time:>12}{laptime:>10}{bestlap:>10} {laps:>5}'
 
     FOOTER = ' * * * * *  SPACE to start/restart, ESC quit'
@@ -202,10 +205,12 @@ class RaceRunner:
             if pos == 1:
                 leader = driver
                 if driver.time and self.start:
-                    driver_time = formattime(driver.time - self.start, True)
-            elif driver.finished_laps == leader.finished_laps:
+                    # driver_time = formattime(driver.time - self.start, True)
+                    leader_time = sum(driver.laps)
+                    driver_time = formattime(leader_time)
+            else:
                 if driver.time and leader.time:
-                    driver_time = '+%ss' % formattime(driver.time - leader.time)
+                    driver_time = '+%ss' % formattime(sum(driver.laps) - leader_time)
 
             text = self.FORMAT.format(
                 pos=pos, car=driver.name, time=driver_time or '-', laps=driver.finished_laps,
@@ -219,8 +224,7 @@ class RaceRunner:
 def save_to_datastore(driver: Driver):
     entity = datastore.Entity(client.key(DATASTORE_ENTITY_NAME))
     entity['username'] = driver.name
-    entity['email'] = driver.email
-    entity['time'] = driver.time
+    entity['time'] = sum(driver.laps)
     entity['laps'] = driver.laps
     entity['best_lap'] = driver.best_lap_time
     entity['finished_at'] = datetime.utcnow()
@@ -236,13 +240,11 @@ with contextlib.closing(ControlUnit(DEVICE, timeout=1)) as control_unit:
     control_unit.version()
 
     driver_name_1 = input('Name (yellow pad): ')
-    driver_email_1 = input('Email (yellow pad): ')
     driver_name_2 = input('Name (blue pad): ')
-    driver_email_2 = input('Email (blue pad): ')
 
     drivers = [
-        Driver(driver_name_1, driver_email_1),
-        Driver(driver_name_2, driver_email_2)
+        Driver(driver_name_1),
+        Driver(driver_name_2)
     ]
 
     def run(window):
